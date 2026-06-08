@@ -1,6 +1,8 @@
 # 🎨 Agnes Media Skill
 
-> 🆓 **完全免费** — Agnes AI 图片生成和视频生成 API 当前 **零费用**，每月有免费额度可用！
+**[English](README_EN.md)** | **中文**
+
+> 🆓 **完全免费** — Agnes AI 图片生成和视频生成 API 当前 **零费用**！
 
 一个用于调用 [Agnes AI](https://agnes-ai.com) API 生成图片和视频的 Claude Code Skill，支持文生图、图生图、文生视频、图生视频、多图视频和关键帧动画。
 
