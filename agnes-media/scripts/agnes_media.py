@@ -75,10 +75,14 @@ IMAGE_SIZE_TIERS = {"1k", "2k", "3k", "4k"}
 
 
 def validate_image_size(size_str):
-    """Validate image size: tier ("1K"–"4K") or exact WIDTHxHEIGHT (multiples of 16)."""
+    """Validate image size and return the canonical value to send to the API.
+
+    Accepts a tier ("1K"–"4K", case-insensitive) or exact WIDTHxHEIGHT;
+    exact sizes should be multiples of 16.
+    """
     s = size_str.strip().lower()
     if s in IMAGE_SIZE_TIERS:
-        return
+        return s.upper()
     try:
         w, h = (int(p) for p in s.split("x"))
         if w <= 0 or h <= 0:
@@ -90,6 +94,7 @@ def validate_image_size(size_str):
     if w % 16 or h % 16:
         print(f"WARNING: exact image sizes should be multiples of 16; '{size_str}' may be "
               f"rejected (HTTP 500) or normalized by the service.", file=sys.stderr)
+    return f"{w}x{h}"
 
 
 def validate_video_dimensions(width, height):
@@ -133,11 +138,12 @@ def generate_image(api_key, prompt, size="1024x768", ratio=None, image_urls=None
     if ratio:
         body["ratio"] = ratio
 
-    # Image-to-image: put images inside extra_body
+    # Image-to-image: put images inside extra_body. The API only accepts
+    # "url"/"b64_json" here — map the CLI value "base64" to "b64_json".
     if image_urls:
         body["extra_body"] = {
             "image": image_urls,
-            "response_format": output_format,
+            "response_format": "b64_json" if output_format == "base64" else output_format,
         }
     else:
         # Text-to-image
@@ -372,10 +378,8 @@ def cmd_image(args):
     if args.image_file:
         image_urls.append(file_to_data_uri(args.image_file))
 
-    validate_image_size(args.size)
-
     generate_image(
-        api_key, args.prompt, size=args.size, ratio=args.ratio,
+        api_key, args.prompt, size=validate_image_size(args.size), ratio=args.ratio,
         image_urls=image_urls or None,
         output_format=args.format,
         output_path=args.output,
