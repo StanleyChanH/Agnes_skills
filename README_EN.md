@@ -11,7 +11,8 @@ A Claude Code Skill for generating images and videos via the [Agnes AI](https://
 ### 🖼️ Image Generation (agnes-image-2.1-flash)
 - **Text-to-Image** — Generate high-quality images from text descriptions
 - **Image-to-Image** — Style transfer, scene transformation on existing images
-- Custom sizes (1024x768, 768x1024, 1024x1024, etc.)
+- **Multi-Image Composition** — Combine multiple reference images into a new one
+- Tier-based sizes (`1K`/`2K`/`3K`/`4K`) + aspect ratios (8 options incl. `16:9`, `9:16`, `1:1`); exact sizes (multiples of 16) also supported
 - URL or Base64 output
 
 ### 🎬 Video Generation (agnes-video-v2.0)
@@ -20,6 +21,7 @@ A Claude Code Skill for generating images and videos via the [Agnes AI](https://
 - **Multi-Image Video** — Use multiple reference images to guide generation
 - **Keyframe Animation** — Smooth transitions between keyframes
 - Duration control (3s ~ 18s), resolution and frame rate customization
+- Automatic size normalization (480p/720p/1080p tiers); actual output size reported on completion
 - Async task processing with automatic progress polling
 
 ## 💰 Pricing
@@ -46,7 +48,13 @@ export AGNES_API_KEY="your-api-key-here"
 ### 3. Generate Images
 
 ```bash
-# Text-to-Image
+# Text-to-Image (recommended: tier + ratio)
+python agnes-media/scripts/agnes_media.py image \
+  --prompt "A luminous floating city above a misty canyon at sunrise, cinematic realism" \
+  --size 2K --ratio 16:9 \
+  --output output.png
+
+# Text-to-Image (legacy exact size, must be multiples of 16)
 python agnes-media/scripts/agnes_media.py image \
   --prompt "A luminous floating city above a misty canyon at sunrise, cinematic realism" \
   --size 1024x768 \
@@ -55,7 +63,7 @@ python agnes-media/scripts/agnes_media.py image \
 # Image-to-Image
 python agnes-media/scripts/agnes_media.py image \
   --prompt "Transform the scene into a rain-soaked cyberpunk night, preserve original composition" \
-  --size 1024x768 \
+  --size 2K --ratio 16:9 \
   --image-url "https://example.com/input.png" \
   --output transformed.png
 ```
@@ -94,6 +102,22 @@ python agnes-media/scripts/agnes_media.py video \
 | ~18 sec | 441 | 24 |
 
 > `num_frames` must follow the `8n + 1` rule, with a maximum of 441.
+
+## 🖼️ Image Size Reference
+
+| Ratio | 1K | 2K | 3K | 4K |
+|-------|----|----|----|----|
+| `1:1` | 1024x1024 | 2048x2048 | 3072x3072 | 4096x4096 |
+| `16:9` | 1312x736 | 2624x1472 | 3936x2208 | 5248x2944 |
+| `9:16` | 736x1312 | 1472x2624 | 2208x3936 | 2944x5248 |
+| `4:3` | 1152x864 | 2304x1728 | 3456x2592 | 4608x3456 |
+| `3:4` | 864x1152 | 1728x2304 | 2592x3456 | 3456x4608 |
+
+> Full table (incl. `2:3`, `3:2`, `21:9`) in the [API reference](agnes-media/references/api_reference.md). Note: `1920x1080` and `2560x1440` are NOT native output sizes — use `--size 2K --ratio 16:9` instead.
+
+## 📹 Video Size Note
+
+The video service auto-normalizes requested `width`/`height` to the nearest preset (`480p`/`720p`/`1080p` at `16:9`, `9:16`, `1:1`, `4:3`, `3:4`), so the actual output size may differ from the request. The script reports the actual output size and any normalization note on completion; trust `size`, `seconds`, and `metadata.size_mapping` in the API response when debugging.
 
 ## 📁 Project Structure
 
@@ -136,5 +160,7 @@ MIT License
 ## 🔗 Links
 
 - [Agnes AI Official](https://agnes-ai.com)
-- [Agnes Image 2.1 Flash Docs](https://agnes-ai.com/doc/agnes-image-21-flash)
-- [Agnes Video V2.0 Docs](https://agnes-ai.com/doc/agnes-video-v20)
+- [Official Docs Index (llms.txt)](https://wiki.agnes-ai.com/llms.txt)
+- [Agnes Image 2.1 Flash Docs](https://wiki.agnes-ai.com/en/docs/agnes-image-21-flash.md)
+- [Agnes Video V2.0 Docs](https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md)
+- [API Common Error Codes](https://wiki.agnes-ai.com/en/docs/code.md)

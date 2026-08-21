@@ -11,7 +11,8 @@
 ### 🖼️ 图片生成 (agnes-image-2.1-flash)
 - **文生图** — 从文字描述生成高质量图片
 - **图生图** — 基于已有图片进行风格转换、场景变换
-- 支持自定义尺寸（1024x768、768x1024、1024x1024 等）
+- **多图合成** — 使用多张参考图组合生成新图
+- 支持档位式尺寸（`1K`/`2K`/`3K`/`4K`）+ 宽高比（`16:9`、`9:16`、`1:1` 等 8 种），也兼容精确尺寸（16 的倍数）
 - 支持 URL 或 Base64 输出
 
 ### 🎬 视频生成 (agnes-video-v2.0)
@@ -20,6 +21,7 @@
 - **多图视频** — 使用多张参考图引导视频生成
 - **关键帧动画** — 在多个关键帧之间生成平滑过渡动画
 - 支持时长控制（3s ~ 18s）、分辨率、帧率自定义
+- 尺寸自动标准化（480p/720p/1080p 档位），完成后报告实际输出尺寸
 - 异步任务处理，自动轮询进度
 
 ## 💰 定价
@@ -46,7 +48,13 @@ export AGNES_API_KEY="your-api-key-here"
 ### 3. 生成图片
 
 ```bash
-# 文生图
+# 文生图（推荐：档位 + 宽高比）
+python agnes-media/scripts/agnes_media.py image \
+  --prompt "一座漂浮在迷雾峡谷上方的发光城市，电影级写实风格" \
+  --size 2K --ratio 16:9 \
+  --output output.png
+
+# 文生图（兼容精确尺寸，须为 16 的倍数）
 python agnes-media/scripts/agnes_media.py image \
   --prompt "一座漂浮在迷雾峡谷上方的发光城市，电影级写实风格" \
   --size 1024x768 \
@@ -55,7 +63,7 @@ python agnes-media/scripts/agnes_media.py image \
 # 图生图
 python agnes-media/scripts/agnes_media.py image \
   --prompt "将场景转换为赛博朋克夜景，保留原始构图" \
-  --size 1024x768 \
+  --size 2K --ratio 16:9 \
   --image-url "https://example.com/input.png" \
   --output transformed.png
 ```
@@ -94,6 +102,22 @@ python agnes-media/scripts/agnes_media.py video \
 | ~18 秒 | 441 | 24 |
 
 > `num_frames` 必须遵循 `8n + 1` 规则，最大值 441。
+
+## 🖼️ 图片尺寸参考
+
+| 宽高比 | 1K | 2K | 3K | 4K |
+|-------|----|----|----|----|
+| `1:1` | 1024x1024 | 2048x2048 | 3072x3072 | 4096x4096 |
+| `16:9` | 1312x736 | 2624x1472 | 3936x2208 | 5248x2944 |
+| `9:16` | 736x1312 | 1472x2624 | 2208x3936 | 2944x5248 |
+| `4:3` | 1152x864 | 2304x1728 | 3456x2592 | 4608x3456 |
+| `3:4` | 864x1152 | 1728x2304 | 2592x3456 | 3456x4608 |
+
+> 完整表格（含 `2:3`、`3:2`、`21:9`）见 [API 参考文档](agnes-media/references/api_reference.md)。注意 `1920x1080`、`2560x1440` 不是原生输出尺寸，请改用 `--size 2K --ratio 16:9`。
+
+## 📹 视频尺寸说明
+
+视频服务会将请求的 `width`/`height` 自动标准化到最接近的档位（`480p`/`720p`/`1080p`，支持 `16:9`、`9:16`、`1:1`、`4:3`、`3:4`），实际输出尺寸可能与请求不同。脚本完成后会打印实际输出尺寸和标准化说明；排查问题时以 API 响应中的 `size`、`seconds` 和 `metadata.size_mapping` 为准。
 
 ## 📁 项目结构
 
@@ -136,5 +160,7 @@ MIT License
 ## 🔗 链接
 
 - [Agnes AI 官网](https://agnes-ai.com)
-- [Agnes Image 2.1 Flash 文档](https://agnes-ai.com/doc/agnes-image-21-flash)
-- [Agnes Video V2.0 文档](https://agnes-ai.com/doc/agnes-video-v20)
+- [官方文档索引 (llms.txt)](https://wiki.agnes-ai.com/llms.txt)
+- [Agnes Image 2.1 Flash 文档](https://wiki.agnes-ai.com/en/docs/agnes-image-21-flash.md)
+- [Agnes Video V2.0 文档](https://wiki.agnes-ai.com/en/docs/agnes-video-v20.md)
+- [API 常见错误码](https://wiki.agnes-ai.com/en/docs/code.md)

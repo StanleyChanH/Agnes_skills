@@ -5,9 +5,15 @@ Supports:
   - Text-to-Image / Image-to-Image (agnes-image-2.1-flash)
   - Text-to-Video / Image-to-Video / Multi-Image Video / Keyframe Animation (agnes-video-v2.0)
 
+Image sizes: tier-based ("1K", "2K", "3K", "4K" with optional --ratio) is the
+recommended form; exact WIDTHxHEIGHT (multiples of 16) is also accepted.
+
+Video results: the final video URL is returned in metadata.url when the task
+status is "completed".
+
 Requires: AGNES_API_KEY environment variable.
 Usage:
-  python agnes_media.py image --prompt "..." --size 1024x768 [--image-url URL] [--output path.png]
+  python agnes_media.py image --prompt "..." --size 2K --ratio 16:9 [--image-url URL] [--output path.png]
   python agnes_media.py video --prompt "..." [--image-url URL] [--width 1152] [--height 768] [--num-frames 121] [--frame-rate 24] [--output path.mp4]
 """
 
@@ -65,26 +71,54 @@ def http_request(url, method="GET", headers=None, data=None, timeout=DEFAULT_TIM
         sys.exit(1)
 
 
-def parse_size(size_str):
-    """Parse size string like '1024x768' into (width, height)."""
+IMAGE_SIZE_TIERS = {"1k", "2k", "3k", "4k"}
+
+
+def validate_image_size(size_str):
+    """Validate image size: tier ("1K"–"4K") or exact WIDTHxHEIGHT (multiples of 16)."""
+    s = size_str.strip().lower()
+    if s in IMAGE_SIZE_TIERS:
+        return
     try:
-        parts = size_str.lower().split("x")
-        return int(parts[0]), int(parts[1])
-    except (ValueError, IndexError):
-        print(f"ERROR: Invalid size format '{size_str}'. Use WIDTHxHEIGHT (e.g. 1024x768).", file=sys.stderr)
+        w, h = (int(p) for p in s.split("x"))
+        if w <= 0 or h <= 0:
+            raise ValueError
+    except ValueError:
+        print(f"ERROR: Invalid size '{size_str}'. Use a tier (1K/2K/3K/4K) or WIDTHxHEIGHT (e.g. 1024x768).",
+              file=sys.stderr)
         sys.exit(1)
+    if w % 16 or h % 16:
+        print(f"WARNING: exact image sizes should be multiples of 16; '{size_str}' may be "
+              f"rejected (HTTP 500) or normalized by the service.", file=sys.stderr)
+
+
+def validate_video_dimensions(width, height):
+    """Warn when video dimensions are not multiples of 64 (can trigger HTTP 500).
+
+    The service also auto-normalizes width/height to the nearest standard
+    preset (480p/720p/1080p at supported aspect ratios), so the final output
+    size may differ from the request; check `size`/`metadata.size_mapping`
+    in the response.
+    """
+    if width % 64 or height % 64:
+        print(f"WARNING: video width/height should be multiples of 64; {width}x{height} may be "
+              f"rejected (HTTP 500) or normalized to the nearest preset.", file=sys.stderr)
 
 
 # ── Image Generation ──────────────────────────────────────────────────────────
 
-def generate_image(api_key, prompt, size="1024x768", image_urls=None,
+def generate_image(api_key, prompt, size="1024x768", ratio=None, image_urls=None,
                    output_format="url", output_path=None):
     """Generate an image using Agnes Image 2.1 Flash.
 
     Args:
         api_key: API authentication key.
         prompt: Text prompt for generation.
-        size: Output size string (e.g. "1024x768").
+        size: Output size — a tier ("1K"/"2K"/"3K"/"4K", recommended) or exact
+            WIDTHxHEIGHT (multiples of 16). Exact sizes may be normalized by
+            the service.
+        ratio: Aspect ratio paired with tier sizes ("1:1", "3:4", "4:3",
+            "16:9", "9:16", "2:3", "3:2", "21:9"). Defaults to "1:1".
         image_urls: Optional list of image URLs for image-to-image.
         output_format: "url" or "base64".
         output_path: Optional local file path to save the image.
@@ -96,6 +130,8 @@ def generate_image(api_key, prompt, size="1024x768", image_urls=None,
         "prompt": prompt,
         "size": size,
     }
+    if ratio:
+        body["ratio"] = ratio
 
     # Image-to-image: put images inside extra_body
     if image_urls:
@@ -110,7 +146,8 @@ def generate_image(api_key, prompt, size="1024x768", image_urls=None,
         else:
             body["extra_body"] = {"response_format": "url"}
 
-    print(f"Generating image (model={IMAGE_MODEL}, size={size})...")
+    print(f"Generating image (model={IMAGE_MODEL}, size={size}"
+          + (f", ratio={ratio}" if ratio else "") + ")...")
     if image_urls:
         print(f"  Mode: image-to-image ({len(image_urls)} input image(s))")
     else:
@@ -194,8 +231,10 @@ def create_video_task(api_key, prompt, image_url=None, extra_images=None,
     elif image_url:
         task_type = "image-to-video"
 
+    validate_video_dimensions(width, height)
+
     print(f"Creating video task (model={VIDEO_MODEL}, {task_type})...")
-    print(f"  Size: {width}x{height}, Frames: {num_frames}, FPS: {frame_rate}")
+    print(f"  Requested size: {width}x{height}, Frames: {num_frames}, FPS: {frame_rate}")
     duration = num_frames / frame_rate if frame_rate else 0
     print(f"  Estimated duration: ~{duration:.1f}s")
 
@@ -266,13 +305,27 @@ def generate_video(api_key, prompt, image_url=None, extra_images=None,
     # Poll for result
     result = poll_video_result(api_key, video_id=video_id, task_id=task_id)
 
-    video_url = result.get("remixed_from_video_id")
+    # The video URL lives in metadata.url; fall back to the legacy field
+    # (remixed_from_video_id) for older API responses.
+    metadata = result.get("metadata") or {}
+    video_url = metadata.get("url") or result.get("remixed_from_video_id")
     if not video_url:
         print("ERROR: Video completed but no URL found.", file=sys.stderr)
         print(json.dumps(result, indent=2), file=sys.stderr)
         sys.exit(1)
 
     print(f"Video URL: {video_url}")
+
+    # Report the actual output size/duration (may differ from the request due
+    # to the service's size normalization).
+    if result.get("size"):
+        line = f"  Output size: {result['size']}"
+        if result.get("seconds"):
+            line += f", duration: {result['seconds']}s"
+        print(line)
+    size_mapping = metadata.get("size_mapping")
+    if isinstance(size_mapping, dict) and size_mapping.get("adjusted"):
+        print(f"  Note: {size_mapping.get('message', 'requested size was mapped to the nearest preset')}")
 
     # Save if requested
     if output_path:
@@ -319,8 +372,10 @@ def cmd_image(args):
     if args.image_file:
         image_urls.append(file_to_data_uri(args.image_file))
 
+    validate_image_size(args.size)
+
     generate_image(
-        api_key, args.prompt, size=args.size,
+        api_key, args.prompt, size=args.size, ratio=args.ratio,
         image_urls=image_urls or None,
         output_format=args.format,
         output_path=args.output,
@@ -355,7 +410,11 @@ def main():
     # ── image subcommand ──
     img = sub.add_parser("image", help="Generate images with Agnes Image 2.1 Flash")
     img.add_argument("--prompt", required=True, help="Text prompt for image generation")
-    img.add_argument("--size", default="1024x768", help="Output size (default: 1024x768)")
+    img.add_argument("--size", default="1024x768",
+                     help="Output size: a tier (1K/2K/3K/4K, recommended, pair with --ratio) "
+                          "or exact WIDTHxHEIGHT, multiples of 16 (default: 1024x768)")
+    img.add_argument("--ratio", choices=["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"],
+                     help="Aspect ratio, paired with tier sizes (e.g. --size 2K --ratio 16:9)")
     img.add_argument("--image-url", help="Input image URL for image-to-image")
     img.add_argument("--image-file", help="Local image file path for image-to-image (converted to data URI)")
     img.add_argument("--format", choices=["url", "base64"], default="url",
